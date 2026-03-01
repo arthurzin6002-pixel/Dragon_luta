@@ -1,238 +1,284 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jogo de Luta</title>
+
 <style>
 body{
   margin:0;
   overflow:hidden;
-  touch-action:none;
-  background: url("arena.jpg"); /* sua imagem de fundo */
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  font-family:Arial;
+  background:black;
+  color:white;
 }
-
-canvas{
-  display:block;
-  background: transparent; /* transparente pra deixar fundo aparecer */
+canvas{display:none}
+#menu{
+  position:absolute;
+  inset:0;
+  background:#0033cc;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
 }
-
+button{
+  padding:12px 18px;
+  margin:6px;
+  font-size:16px;
+  border:none;
+  border-radius:10px;
+}
 .controls{
   position:absolute;
   bottom:10px;
   width:100%;
-  display:flex;
+  display:none;
   justify-content:space-between;
   padding:10px;
 }
-
-button{
-  width:55px;
-  height:55px;
-  font-size:18px;
-  border-radius:12px;
-  border:none;
+.reset{
+  background:#c40000;
+  color:white;
 }
 </style>
 </head>
+
 <body>
+
+<div id="menu">
+  <h1>MENU</h1>
+  <p id="moedasTxt"></p>
+
+  <div id="levels"></div>
+
+  <h3>LOJA</h3>
+  <button onclick="buyLife()">❤️ Vida Máx +50 (3)</button>
+  <button onclick="buyDamage()">👊 Dano +5 (5)</button>
+  <button onclick="buySpeed()">⚡ Velocidade +1 (3)</button>
+
+  <button class="reset" onclick="resetConta()">🔄 Resetar Conta</button>
+</div>
 
 <canvas id="game"></canvas>
 
-<div class="controls">
+<div class="controls" id="controls">
   <div>
     <button onclick="moveLeft()">⬅</button>
     <button onclick="moveRight()">➡</button>
     <button onclick="jump()">⬆</button>
-    <button onclick="block()">🛡</button>
   </div>
   <div>
     <button onclick="attack()">👊</button>
-    <button id="specialBtn">🔥</button>
   </div>
 </div>
 
 <script>
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
-canvas.width=window.innerWidth;
-canvas.height=window.innerHeight;
+/* ===== CANVAS ===== */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = innerWidth;
+canvas.height = innerHeight;
 
-let gravity=0.8;
-let beamActive=false;
-let specialUnlocked=false;
+canvas.addEventListener("mousedown", attack);
+canvas.addEventListener("touchstart", attack);
 
-let player={
-  x:120,
-  y:canvas.height-150,
+/* ===== FUNDO ===== */
+const bg = new Image();
+bg.src = "arena.jpg";
+
+/* ===== VARIÁVEIS ===== */
+const gravity = 0.8;
+const totalRounds = 3;
+
+/* ===== SAVE ===== */
+let moedas = Number(localStorage.getItem("moedas")) || 0;
+let unlocked = Number(localStorage.getItem("nivel")) || 1;
+
+/* ===== PLAYER ===== */
+let player = {
+  x:200,
+  y:canvas.height-200,
   vy:0,
-  color:"cyan",
-  punching:false,
-  blocking:false,
-  life:100
+  maxLife: Number(localStorage.getItem("maxLife")) || 300,
+  life: 300,
+  damage: Number(localStorage.getItem("dmg")) || 35,
+  speed: Number(localStorage.getItem("spd")) || 6
 };
 
-let enemy={
-  x:600,
-  y:canvas.height-150,
-  vy:0,
-  color:"red",
-  punching:false,
-  blocking:false,
-  life:100
-};
+let enemy = {};
+let currentLevel = 1;
+let round = 1;
 
-function drawStickman(p){
-  ctx.strokeStyle=p.blocking ? "gray" : p.color;
-  ctx.lineWidth=4;
-
-  ctx.beginPath();
-  ctx.arc(p.x,p.y-40,15,0,Math.PI*2);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(p.x,p.y-25);
-  ctx.lineTo(p.x,p.y+20);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(p.x,p.y-10);
-  if(p.punching){
-    ctx.lineTo(p.x+30,p.y-20);
-  }else{
-    ctx.lineTo(p.x+20,p.y);
+/* ===== MENU ===== */
+function updateMenu(){
+  document.getElementById("moedasTxt").innerText =
+    `Moedas: ${moedas} | Vida Máx: ${player.maxLife}`;
+  const lv = document.getElementById("levels");
+  lv.innerHTML="";
+  for(let i=1;i<=5;i++){
+    const b=document.createElement("button");
+    b.innerText="Nível "+i;
+    b.disabled=i>unlocked;
+    b.onclick=()=>startLevel(i);
+    lv.appendChild(b);
   }
-  ctx.stroke();
+}
+updateMenu();
 
-  ctx.beginPath();
-  ctx.moveTo(p.x,p.y-10);
-  ctx.lineTo(p.x-20,p.y);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(p.x,p.y+20);
-  ctx.lineTo(p.x+15,p.y+50);
-  ctx.moveTo(p.x,p.y+20);
-  ctx.lineTo(p.x-15,p.y+50);
-  ctx.stroke();
+/* ===== LOJA ===== */
+function buyLife(){
+  if(moedas>=3){
+    moedas-=3;
+    player.maxLife+=50;
+    save();
+  }
+}
+function buyDamage(){
+  if(moedas>=5){
+    moedas-=5;
+    player.damage+=5;
+    save();
+  }
+}
+function buySpeed(){
+  if(moedas>=3){
+    moedas-=3;
+    player.speed+=1;
+    save();
+  }
+}
+function save(){
+  localStorage.setItem("moedas", moedas);
+  localStorage.setItem("maxLife", player.maxLife);
+  localStorage.setItem("dmg", player.damage);
+  localStorage.setItem("spd", player.speed);
+  updateMenu();
 }
 
-function update(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+/* ===== RESET ===== */
+function resetConta(){
+  if(confirm("Deseja resetar sua conta?")){
+    localStorage.clear();
+    moedas = 0;
+    unlocked = 1;
+    player.maxLife = 300;
+    player.life = 300;
+    player.damage = 35;
+    player.speed = 6;
+    updateMenu();
+    alert("Conta resetada!");
+  }
+}
 
-  // gravidade
+/* ===== START LEVEL ===== */
+function startLevel(lv){
+  currentLevel=lv;
+  round=1;
+  startRound();
+}
+
+/* ===== START ROUND ===== */
+function startRound(){
+  document.getElementById("menu").style.display="none";
+  canvas.style.display="block";
+  document.getElementById("controls").style.display="flex";
+
+  player.life=player.maxLife;
+
+  enemy={
+    x:650,
+    y:canvas.height-200,
+    vy:0,
+    maxLife:200+currentLevel*120,
+    life:200+currentLevel*120,
+    speed:0.8+currentLevel*0.5,
+    damage:0.25+currentLevel*0.2
+  };
+
+  loop();
+}
+
+/* ===== DESENHO ===== */
+function drawStick(x,y,c){
+  ctx.strokeStyle=c;
+  ctx.lineWidth=4;
+  ctx.beginPath();ctx.arc(x,y-50,15,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x,y-35);ctx.lineTo(x,y+20);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x,y-20);ctx.lineTo(x-20,y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x,y-20);ctx.lineTo(x+20,y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x,y+20);ctx.lineTo(x-15,y+55);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x,y+20);ctx.lineTo(x+15,y+55);ctx.stroke();
+}
+
+/* ===== CONTROLES ===== */
+function moveLeft(){player.x-=player.speed;}
+function moveRight(){player.x+=player.speed;}
+function jump(){if(player.vy===0)player.vy=-15;}
+function attack(){
+  if(Math.abs(player.x-enemy.x)<90){
+    enemy.life-=player.damage;
+  }
+}
+
+/* ===== LOOP ===== */
+function loop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(bg,0,0,canvas.width,canvas.height);
+
   player.vy+=gravity;
   player.y+=player.vy;
-  if(player.y>canvas.height-150){
-    player.y=canvas.height-150;
-    player.vy=0;
+  if(player.y>canvas.height-200){player.y=canvas.height-200;player.vy=0;}
+
+  if(enemy.x>player.x+10)enemy.x-=enemy.speed;
+  if(enemy.x<player.x-10)enemy.x+=enemy.speed;
+
+  if(Math.abs(enemy.x-player.x)<55){
+    player.life-=enemy.damage;
   }
 
-  enemy.vy+=gravity;
-  enemy.y+=enemy.vy;
-  if(enemy.y>canvas.height-150){
-    enemy.y=canvas.height-150;
-    enemy.vy=0;
-  }
+  drawStick(player.x,player.y,"cyan");
+  drawStick(enemy.x,enemy.y,"red");
 
-  // IA movimento
-  if(enemy.x>player.x+80) enemy.x-=2;
-  if(enemy.x<player.x-80) enemy.x+=2;
-
-  // IA ataque
-  if(Math.abs(enemy.x-player.x)<60){
-    enemy.punching=true;
-    if(!player.blocking){
-      player.life-=0.2;
-    }
-  }else{
-    enemy.punching=false;
-  }
-
-  // desbloqueia Kamehameha após tirar 50 de vida
-  if(enemy.life<=50){
-    specialUnlocked=true;
-  }
-
-  // KAMEHAMEHA
-  if(beamActive && specialUnlocked){
-    ctx.strokeStyle="cyan";
-    ctx.lineWidth=8;
-    ctx.beginPath();
-    ctx.moveTo(player.x+20,player.y-20);
-    ctx.lineTo(player.x+250,player.y-20);
-    ctx.stroke();
-
-    if(Math.abs(enemy.x-player.x)<250 && !enemy.blocking){
-      // não deixa morrer, sempre deixa pelo menos 5 de vida
-      if(enemy.life>5){
-        enemy.life-=0.6;
-      }
-    }
-  }
-
-  drawLifeBars();
-  drawStickman(player);
-  drawStickman(enemy);
-
-  checkGameOver();
-  requestAnimationFrame(update);
-}
-
-function drawLifeBars(){
   ctx.fillStyle="lime";
-  ctx.fillRect(20,20,player.life*2,15);
-  ctx.fillRect(canvas.width-220,20,enemy.life*2,15);
-}
+  ctx.fillRect(20,20,(player.life/player.maxLife)*200,15);
+  ctx.fillRect(canvas.width-220,20,(enemy.life/enemy.maxLife)*200,15);
 
-function moveLeft(){ player.x-=15; }
-function moveRight(){ player.x+=15; }
+  ctx.fillText(`Round ${round}/3`,canvas.width/2-40,20);
 
-function jump(){
-  if(player.vy===0){
-    player.vy=-15;
-  }
-}
-
-function block(){
-  player.blocking=true;
-  setTimeout(()=>player.blocking=false,500);
-}
-
-function attack(){
-  player.punching=true;
-  setTimeout(()=>player.punching=false,200);
-
-  if(Math.abs(player.x-enemy.x)<60){
-    if(!enemy.blocking){
-      enemy.life-=5;
-    }
-  }
-}
-
-// tocar botão do Kamehameha
-document.getElementById("specialBtn").addEventListener("touchstart",()=>{
-  if(specialUnlocked){
-    beamActive=true;
-  }
-});
-document.getElementById("specialBtn").addEventListener("touchend",()=>{
-  beamActive=false;
-});
-
-function checkGameOver(){
   if(player.life<=0){
     alert("Você perdeu!");
-    location.reload();
+    voltarMenu();
+    return;
   }
+
   if(enemy.life<=0){
-    alert("Você venceu!");
-    location.reload();
+    round++;
+    if(round<=totalRounds){
+      startRound();
+    }else{
+      moedas+=currentLevel*8;
+      if(currentLevel===unlocked && unlocked<5){
+        unlocked++;
+        localStorage.setItem("nivel",unlocked);
+      }
+      save();
+      voltarMenu();
+    }
+    return;
   }
+
+  requestAnimationFrame(loop);
 }
 
-update();
+/* ===== VOLTAR MENU ===== */
+function voltarMenu(){
+  player.life=player.maxLife;
+  canvas.style.display="none";
+  document.getElementById("controls").style.display="none";
+  document.getElementById("menu").style.display="flex";
+  updateMenu();
+}
 </script>
 </body>
 </html>
